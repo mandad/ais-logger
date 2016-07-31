@@ -684,7 +684,7 @@ def telegramparser(inputstring):
 
 
     # If the sentence contains NMEA-compliant position data (from own GPS):
-    if telegram[0] == '$GPGGA':
+    if telegram[0][-3] == 'GGA' and telegram[0][0] == '$':
         # Check the checksum
         if not checksum(inputstring):
             return
@@ -708,6 +708,35 @@ def telegramparser(inputstring):
         timestamp = datetime.datetime.now()
         # Return a dictionary with descriptive keys
         return {'ownlatitude': latitude, 'ownlongitude': longitude, 'time': timestamp}
+    if telegram[0][-3:] == 'RMC' and telegram[0][0] == '$':
+        # Check the checksum
+        if not checksum(inputstring):
+            return
+        # Latitude
+        degree = int(telegram[3][0:2])
+        minutes = decimal.Decimal(telegram[3][2:9])
+        if telegram[4] == 'N':
+            latitude = degree + (minutes / 60)
+        else:
+            latitude = -(degree + (minutes / 60))
+        latitude = latitude.quantize(decimal.Decimal('1E-6'))
+        # Longitude
+        degree = int(telegram[5][0:3])
+        minutes = decimal.Decimal(telegram[5][3:10])
+        if telegram[6] == 'E':
+            longitude = degree + (minutes / 60)
+        else:
+            longitude = -(degree + (minutes / 60))
+        longitude = longitude.quantize(decimal.Decimal('1E-6'))
+        # Speed over ground
+        sog = decimal.Decimal(telegram[7])
+        # Course over ground
+        cog = decimal.Decimal(telegram[8])
+        
+        # Timestamp the message with local time
+        timestamp = datetime.datetime.now()
+        # Return a dictionary with descriptive keys
+        return {'ownlatitude': latitude, 'ownlongitude': longitude, 'ownsog': sog, 'owncog': cog, 'time': timestamp}
 
 
 def binaryparser(dac,fi,data):

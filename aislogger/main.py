@@ -38,7 +38,7 @@ import time, random
 import gettext
 
 # Import add-on Python packages
-from pysqlite2 import dbapi2 as sqlite
+import sqlite3 as sqlite
 import numpy
 import serial
 import wx
@@ -4005,6 +4005,7 @@ class CommHubThread:
                 # Add one to stats dict
                 self.stats[source]['received'] += 1
                 # Parse data
+                #print(data)
                 parser = dict(decode.telegramparser(data))
                 # Set source in parser
                 parser['source'] = source
@@ -4018,7 +4019,8 @@ class CommHubThread:
                         self.stats[source]['parsed'] += 1
                 # See if we have a position and if we should use it
                 elif 'ownlatitude' in parser and 'ownlongitude' in parser:
-                    if position_source.lowercase() == 'any' or position_source == source:
+                    #print('Found Ownship Info: ' + position_source)
+                    if position_source.lower() == 'any' or position_source == source:
                         # Send data to main thread
                         main_thread.put(parser)
                         # Add to stats dict
@@ -4140,6 +4142,7 @@ class MainThread:
 
         # Define a dict to store own position data in
         self.ownposition = {}
+        self.ownmmsi = 1
 
         # Define a dict to store remarks/alerts in
         self.remarkdict = {}
@@ -4152,7 +4155,7 @@ class MainThread:
                 owngeoref = georef(ownlatitude,ownlongitude)
             except:
                 owngeoref = None
-            self.ownposition.update({'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref})
+            self.ownposition.update({'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref, 'owntime': datetime.datetime.now(), 'ownsog': 0, 'owncog': 0})
 
         # Create main database
         self.db_main = pydblite.Base('dummy')
@@ -4448,20 +4451,24 @@ class MainThread:
                 time.sleep(0.05)
                 incoming = {}
             if incoming == 'stop': break
+
             # Check if incoming contains a MMSI number
             if 'mmsi' in incoming and incoming['mmsi'] > 1:
                 update = self.DbUpdate(incoming)
                 if update:
                     self.UpdateMsg(*update)
             # If incoming got own position data, use it
-            elif 'ownlatitude' in incoming and 'ownlongitude' in incoming and not config['position'].as_bool('override_on'):
+            elif 'ownlatitude' in incoming and 'ownlongitude' in incoming: #and not config['position'].as_bool('override_on'):
                 ownlatitude = incoming['ownlatitude']
                 ownlongitude = incoming['ownlongitude']
+                owntime = incoming['time']
+                ownsog = incoming['ownsog']
+                owncog = incoming['owncog']
                 try:
                     owngeoref = georef(ownlatitude,ownlongitude)
                 except:
                     owngeoref = None
-                self.ownposition.update({'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref})
+                self.ownposition.update({'ownlatitude': ownlatitude, 'ownlongitude': ownlongitude, 'owngeoref': owngeoref, 'ownsog': ownsog, 'owncog': owncog, 'owntime': owntime})
                 # Send a position update
                 self.SendMsg({'own_position': self.ownposition})
             # If incoming has special attributes
@@ -4518,6 +4525,7 @@ class MainThread:
                     lastiddblogtime = time.time()
 
     def dblog(self):
+        print('dblog called')
         # Make a query for the metadata, but return only rows where IMO
         # has a value, and make a MD5 hash out of the data
         newhashdict = {}
@@ -4588,7 +4596,9 @@ class MainThread:
             metadataquery.append(data)
         # Sort in chronological order (by time)
         metadataquery.sort()
+        ownshipdata = [self.ownposition['owntime'].replace(microsecond=0).isoformat(), self.ownmmsi, float(self.ownposition['ownlatitude']), float(self.ownposition['ownlongitude']), self.ownposition['owngeoref'], float(self.ownposition['ownsog']), float(self.ownposition['owncog'])]
         # Open the file and log
+        print('trying to insert data')
         try:
             # Open file with filename in config['logging']['logfile']
             connection = sqlite.connect(os.path.join(package_home(globals()), unicode(config['logging']['logfile'], 'utf-8')))
@@ -4599,6 +4609,8 @@ class MainThread:
             # Log to the two tables
             cursor.executemany("INSERT INTO position (time, mmsi, latitude, longitude, georef, sog, cog) VALUES (?, ?, ?, ?, ?, ?, ?)", positionquery)
             cursor.executemany("INSERT INTO metadata (time, mmsi, imo, name, type, callsign, destination, eta, length, width) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", metadataquery)
+            # Log Ownship data
+            cursor.execute("INSERT INTO position (time, mmsi, latitude, longitude, georef, sog, cog) VALUES (?, ?, ?, ?, ?, ?, ?)", ownshipdata)
             # Commit changes and close file
             connection.commit()
             connection.close()
