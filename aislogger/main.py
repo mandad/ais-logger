@@ -82,7 +82,7 @@ cmdlineparser.add_option("-n", "--nogui", action="store_true", dest="nogui", def
 if cmdlineoptions.configfile:
     # Try to open the supplied config file
     try:
-        testopen = open(cmdlineoptions.configfile, 'r')
+        testopen = open(cmdlinepoptions.configfile, 'r')
         testopen.close()
         configfiles = [os.path.abspath(cmdlineoptions.configfile)]
     except (IOError, IndexError):
@@ -4525,7 +4525,6 @@ class MainThread:
                     lastiddblogtime = time.time()
 
     def dblog(self):
-        print('dblog called')
         # Make a query for the metadata, but return only rows where IMO
         # has a value, and make a MD5 hash out of the data
         newhashdict = {}
@@ -4598,7 +4597,6 @@ class MainThread:
         metadataquery.sort()
         ownshipdata = [self.ownposition['owntime'].replace(microsecond=0).isoformat(), self.ownmmsi, float(self.ownposition['ownlatitude']), float(self.ownposition['ownlongitude']), self.ownposition['owngeoref'], float(self.ownposition['ownsog']), float(self.ownposition['owncog'])]
         # Open the file and log
-        print('trying to insert data')
         try:
             # Open file with filename in config['logging']['logfile']
             connection = sqlite.connect(os.path.join(package_home(globals()), unicode(config['logging']['logfile'], 'utf-8')))
